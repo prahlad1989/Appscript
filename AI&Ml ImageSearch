@@ -1,0 +1,149 @@
+function onOpen() {
+    var ui = SpreadsheetApp.getUi().createMenu('AI&ML')
+        .addItem('ImageSearch', 'imageSearch')
+        .addToUi();
+ 
+}
+
+function imageSearch() {
+    tic=new Date().getTime()/(1000);
+    let sheet = SpreadsheetApp.getActive().getSheetByName("Main");
+    let headersRows = 1;
+    let range = sheet.getRange(headersRows + 1, 1, sheet.getLastRow() - headersRows);
+    console.log("last row %s",sheet.getLastRow());
+    let map = new Map();
+    let imageUrls = [];
+    //console.log(range.getValues());
+    let  emptyValuesStartPosition = headersRows + 1;
+    let flag = false;
+    range.getValues().forEach(function (eachRow, index) {
+        input = eachRow[0];
+        output = sheet.getRange(index + 1 + headersRows, 2).getValue();
+        //console.log("output value %s",output);
+        //console.log("%s, %s, %s",input.toString(),output,(input && input.toString().length>0 && (output == undefined || output.toString().trim().length==0)));
+        if(flag)imageUrls.push(input.toString());
+        
+        else if (input && input.toString().length > 0 && (output == undefined || output.toString().length == 0)) {
+            map.set(headersRows + 1 + index, input.toString()); //considering no output rows.
+            imageUrls.push(input.toString());
+            
+            emptyValuesStartPosition = headersRows + 1 + index;
+            flag = true;
+            
+
+        }
+
+    });
+    console.log("empty rows position",emptyValuesStartPosition);
+    //console.log(imageUrls);
+    let searchResults = getSearchResult(imageUrls);
+    //console.log(searchResults);
+    //    console.log(map);
+    //    let i = 0;
+    //
+    //    for (let rowNum of map.keys()) {
+    //        console.log("key%s", rowNum);
+    //        sheet.getRange(rowNum, 2).setValue(searchResults[i++]);
+    //    }
+    totalSearchResults = searchResults.map(function (eachResult) {
+        return [eachResult];
+    });
+    //console.log("searchResults %s,and array %s",totalSearchResults.length, totalSearchResults);
+    if (searchResults.length > 0)
+        sheet.getRange(emptyValuesStartPosition, 2, totalSearchResults.length).setHorizontalAlignment("right").setValues(totalSearchResults);
+
+}
+
+function getSearchResult(imageUrls) {
+
+    let totalCountArray = [];
+    let chunkSize=5;
+    try {
+        let i = 0;
+        while (i < imageUrls.length) {
+            //        imageUrls.slice(i, i+Math.min(i+5,imageUrls.length)).length
+
+            let currentChunk=imageUrls.slice(i, i + Math.min(chunkSize, imageUrls.length - i));
+            let requests = currentChunk.map(function (imageUrl) {
+                let countArray = [];
+                var eachImage = {
+                    image: {
+                        source: {
+                            imageUri: ""
+                        }
+                    },
+                    features: [{
+                            maxResults: 1000,
+                            type: "WEB_DETECTION"
+                        }
+                    ]
+                }
+                eachImage.image.source.imageUri = imageUrl;
+                return JSON.parse(JSON.stringify(eachImage));
+
+            });
+            //console.log(JSON.stringify({
+            //       "requests": requests
+            //   }));
+
+            //console.log(requests[0].image.source.imageUri);
+            let searchResult = JSON.parse(UrlFetchApp.fetch(
+                        "https://vision.googleapis.com/v1/images:annotate?key=AIzaSyA6ufL9bYKDTyl5P_SOhL-bFoIWnjCa1Ew", {
+                        method: "POST",
+                        Accept: "application/json",
+                        contentType: "application/json",
+                        payload: JSON.stringify({
+                            "requests": requests
+                        })
+                    }).getContentText());
+            //console.log(JSON.stringify(searchResult));
+            
+            let responses = searchResult.responses;
+            //console.log(responses);
+            countArray = responses.map(function (response,index) {
+                //console.log(response.error);
+                if (response.webDetection && response.webDetection.pagesWithMatchingImages)
+                    {
+                      //console.log(response.webDetection.pagesWithMatchingImages);
+                      pagesWithMatch=response.webDetection.pagesWithMatchingImages;
+                      hostSet=new Set();
+                      pagesWithMatch.forEach(function(eachPage){
+                        //console.log(eachPage.url);
+                        let matches=eachPage.url.match(/^https?\:\/\/([^\/?#]+)(?:[\/?#]|$)/i);
+                        let domain= matches && matches[1];
+                        //console.log("domain is %s",domain);
+                        hostSet.add(domain);
+                      });
+                      //console.log("set is %s",Array.from(hostSet));
+                      return hostSet.size;
+                    }
+                else if(response.error){
+                   let imageExistsInWeb=false;
+                   let requestedImageLink=currentChunk[index];
+                   try{
+                    let responseCode=UrlFetchApp.fetch(requestedImageLink);
+                   }catch (ex){
+                    console.log("print exception %s",ex.toString());
+                    return 'Not Found';
+                }
+                  return 0;
+                }
+                else if(!response.webDetection || !response.webDetection.pagesWithMatchingImages)
+                    return 0;
+            });
+            //console.log("count array %s",countArray);
+
+            console.log("total count array count %s", totalCountArray.length);
+            totalCountArray=totalCountArray.concat(countArray);
+            let  toc =new Date().getTime()/(1000);
+            
+            if(toc-tic > 300)break;
+
+            i = i + chunkSize;
+        }
+
+    } catch (f) {
+        console.log("error is " + f.toString());
+    }
+    return totalCountArray;
+}
