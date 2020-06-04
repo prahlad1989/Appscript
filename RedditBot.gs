@@ -135,12 +135,12 @@ function fetchResultsSub(inputSheet, url, resultsAccum, tic, startDate, endDate,
     console.log("url is %s", finalUrl);
     let toc = new Date().getTime();
     
-    if ((toc - tic) / 1000 > 3) {
+    if ((toc - tic) / 1000 > 50) {
         return resultsAccum;
     } else if (endDate && startDate && endDate <= startDate) {
         resultsAccum.status = "Completed";
         return resultsAccum;
-    }else if(resultsAccum.maxRows >= resultsAccum.rows.length){
+    }else if(resultsAccum.maxRows <= resultsAccum.rows.length){
         resultsAccum.status = "Completed";
         return resultsAccum;
     }
