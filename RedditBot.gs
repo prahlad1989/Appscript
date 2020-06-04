@@ -1,5 +1,11 @@
-function myFunction() {
+function onOpen() {
+    var ui = SpreadsheetApp.getUi().createMenu('RedditBot')
+        .addItem('GetInfo', 'myFunction')
+        .addToUi();
+ }
 
+
+function myFunction() {
     let inputSheet = SpreadsheetApp.getActive().getSheetByName("Inputs");
     let outputSheet = SpreadsheetApp.getActive().getSheetByName("Export");
     let results = fetchResults(inputSheet,outputSheet);
@@ -36,8 +42,6 @@ function applyParamsFunction(url, typeOfExport, username, subredditName, fiedsTo
         url += '&subreddit=' + subredditName;
     url += "&metadata=true&size=1000";
     let fiedsToIncludeString = fiedsToInclude.toString().replace("[", "").replace("]", "");
-
-    //console.log(" fields to include %s", fiedsToIncludeString);
     url += "&fields=" + fiedsToIncludeString;
     return url;
 }
@@ -56,12 +60,10 @@ function formatResult(results, fiedsToInclude) {
                 entries.push(result[fieldName]);
         });
 
-        if (entries.length < 12)
-            console.log(entries);
-        setTest.add(entries.length);
+        //setTest.add(entries.length);
         return entries;
     });
-    console.log("set %s", Array.from(setTest));
+    //console.log("set %s", Array.from(setTest));
     return results;
 }
 
@@ -97,7 +99,7 @@ function fetchResults(inputSheet, outputSheet) {
     }
 
     let baseUrl = "https:\/\/api.pushshift.io\/reddit\/search\/";
-    console.log("current url %s", baseUrl);
+    console.log("base url %s", baseUrl);
     let url = applyParamsFunction(baseUrl, typeOfExport, username, subredditName, fiedsToInclude);
 
     console.log("after params url %s", url);
@@ -114,7 +116,8 @@ function fetchResults(inputSheet, outputSheet) {
     let resultsAcc = {
         "rows": []
     };
-    resultsAcc.maxRows=inputSheet.getRange("h10").getValue();
+    
+    resultsAcc.maxRows=inputSheet.getRange("e13").getValue();
     resultsAcc = fetchResultsSub(inputSheet, url, resultsAcc, new Date().getTime(), startDate, endDate, metadata);
     resultsAcc.rows = formatResult(resultsAcc.rows, fiedsToInclude);
 
@@ -135,7 +138,7 @@ function fetchResultsSub(inputSheet, url, resultsAccum, tic, startDate, endDate,
     console.log("url is %s", finalUrl);
     let toc = new Date().getTime();
     
-    if ((toc - tic) / 1000 > 50) {
+    if ((toc - tic) / 1000 > 200) {
         return resultsAccum;
     } else if (endDate && startDate && endDate <= startDate) {
         resultsAccum.status = "Completed";
@@ -193,14 +196,14 @@ function updateSheet(sheet, data) {
     }
     temp=[];
     
-    for(let i=0;i<100;i++){
-      temp=temp.concat(data.rows);
-    
-    }
-    var g = JSON.stringify(temp).replace(/[\[\]\,\"]/g,''); //stringify and remove all "stringification" extra data
-    console.log("array size total %s",g.length/1000000); //this will be your length.
-    
-    data.rows=temp;
+//    for(let i=0;i<100;i++){
+//      temp=temp.concat(data.rows);
+//    
+//    }
+//    var g = JSON.stringify(temp).replace(/[\[\]\,\"]/g,''); //stringify and remove all "stringification" extra data
+//    console.log("array size total %s",g.length/1000000); //this will be your length.
+//    
+//    data.rows=temp;
     console.log("total cells needed %s,elngth %s,width %s",data.rows.length*data.headers.length,data.rows.length ,data.headers.length);
 
     rowsAvailable = Math.floor((5000000 / data.headers.length) - sheet.getLastRow() - 1 - 1000);
@@ -208,7 +211,7 @@ function updateSheet(sheet, data) {
 //      data.rows=data.rows.slice(0,rowsAvailable);
 //      sheet.getRange(sheet.getLastRow() + 1, 1, data.rows.length, data.headers.length).setValues(data.rows);
 //    }  
-    sheet.getRange(1, 1, 1, data.headers.length).setFontStyle("bold");
+    
 //    let i=0;
 //    while(i<data.maxRows){
 //      slice=data.rows.slice(i,i+20000);
@@ -218,7 +221,10 @@ function updateSheet(sheet, data) {
 //    }
     resultRowsLength=Math.min(data.rows.length,data.maxRows);
     if(resultRowsLength < data.rows.length)data.rows=data.rows.slice(0,resultRowsLength);
-    sheet.getRange(2, 1, resultRowsLength, data.headers.length).setValues(data.rows);
+    if(data.rows.length!=0)
+      sheet.getRange(2, 1, resultRowsLength, data.headers.length).setValues(data.rows);
+    //else SpreadsheetApp.getUi().alert("No Data Retured");
+    sheet.getRange(1, 1, 1, data.headers.length).setFontWeight("bold");
     
 
 }
