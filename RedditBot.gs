@@ -4,7 +4,6 @@ function myFunction() {
     let outputSheet = SpreadsheetApp.getActive().getSheetByName("Export");
     let results = fetchResults(inputSheet,outputSheet);
     updateSheet(outputSheet, results);
-
 }
 
 function metaDataFunction(url, startDate, endDate) {
@@ -29,7 +28,7 @@ function metaDataFunction(url, startDate, endDate) {
 
 function applyParamsFunction(url, typeOfExport, username, subredditName, fiedsToInclude) {
 
-    let recordsProcessedTill = SpreadsheetApp.getActive().getSheetByName("Aux").getRange("b1").getValue();
+   
     url = url + typeOfExport + "\/?";
     if (username)
         url += '&author=' + username;
@@ -50,6 +49,9 @@ function formatResult(results, fiedsToInclude) {
         fiedsToInclude.forEach(function (fieldName) {
             if (result[fieldName] == undefined)
                 entries.push(' ');
+            else if (fieldName=="created_utc"){
+              entries.push(new Date(result[fieldName] *1000));
+            }
             else
                 entries.push(result[fieldName]);
         });
@@ -99,9 +101,6 @@ function fetchResults(inputSheet, outputSheet) {
     let url = applyParamsFunction(baseUrl, typeOfExport, username, subredditName, fiedsToInclude);
 
     console.log("after params url %s", url);
-
-    //console.log("meta data %s",metadata);
-
     let startDate = undefined;
     let endDate = undefined;
     let fullOrPartial = inputSheet.getRange("e7").getValue().trim();
@@ -115,19 +114,16 @@ function fetchResults(inputSheet, outputSheet) {
     let resultsAcc = {
         "rows": []
     };
-
-    resultsAcc = fetchResultsSub(inputSheet, url, resultsAcc, new Date().getTime(), rowsAvailable, startDate, endDate, metadata);
+    resultsAcc.maxRows=inputSheet.getRange("h10").getValue();
+    resultsAcc = fetchResultsSub(inputSheet, url, resultsAcc, new Date().getTime(), startDate, endDate, metadata);
     resultsAcc.rows = formatResult(resultsAcc.rows, fiedsToInclude);
 
     resultsAcc.headers = fiedsToInclude;
+    
     return resultsAcc;
-
-    //console.log("results ",results);
-
-    //return fetchResultsSub(query, [], new Date().getTime());
 }
 
-function fetchResultsSub(inputSheet, url, resultsAccum, tic, rowsAvailable, startDate, endDate, metadata) {
+function fetchResultsSub(inputSheet, url, resultsAccum, tic, startDate, endDate, metadata) {
     let finalUrl = url;
     if (endDate) {
         finalUrl += "&before=" + endDate;
@@ -138,12 +134,17 @@ function fetchResultsSub(inputSheet, url, resultsAccum, tic, rowsAvailable, star
 
     console.log("url is %s", finalUrl);
     let toc = new Date().getTime();
-    if ((toc - tic) / 1000 > 4) {
+    
+    if ((toc - tic) / 1000 > 3) {
         return resultsAccum;
     } else if (endDate && startDate && endDate <= startDate) {
         resultsAccum.status = "Completed";
         return resultsAccum;
-    } else {
+    }else if(resultsAccum.maxRows >= resultsAccum.rows.length){
+        resultsAccum.status = "Completed";
+        return resultsAccum;
+    }
+    else {
 
         let queryResult = UrlFetchApp.fetch(finalUrl).getContentText();
         console.log("type of %s", typeof(queryResult));
@@ -158,11 +159,7 @@ function fetchResultsSub(inputSheet, url, resultsAccum, tic, rowsAvailable, star
         }
         resultsAccum.rows = resultsAccum.rows.concat(queryResult.data);
         let lastCreatedUTC = data[data.length - 1].created_utc;
-
-        //let match=url.match(/before\=(\d+)/i);
-        //url=(match && match.length>0)?url.replace(/before\=(\d+)/i,"before="+lastCreatedUTC):(url+"&before="+lastCreatedUTC)
-        //console.log("time taken for this query %s accumlated %s , result size ", (new Date().getTime() - queryStart) / 1000, (new Date().getTime() - tic) / 1000, accum.length);
-        return fetchResultsSub(inputSheet, url, resultsAccum, tic, rowsAvailable, startDate, lastCreatedUTC - 1);
+        return fetchResultsSub(inputSheet, url, resultsAccum, tic, startDate, lastCreatedUTC - 1);
 
     }
 
@@ -172,9 +169,9 @@ function updateSheetExp(sheet, data) {
     sheet.clear();
     sheet.clearFormats();
     sheet.clearNotes();
-    if (sheet.getLastRow() == 0) {
-        sheet.appendRow(data.headers);
-    }
+    
+    sheet.appendRow(data.headers);
+    
     sheet.getRange(1, 1, 1, sheet.getMaxColumns()).setFontStyle("bold");
 
     sheet.getRange(sheet.getLastRow() + 1, 1, data.rows.length, data.headers.length).setValues(data.rows);
@@ -194,24 +191,34 @@ function updateSheet(sheet, data) {
     if (sheet.getLastRow() == 0) {
         sheet.appendRow(data.headers);
     }
+    temp=[];
+    
+    for(let i=0;i<100;i++){
+      temp=temp.concat(data.rows);
+    
+    }
+    var g = JSON.stringify(temp).replace(/[\[\]\,\"]/g,''); //stringify and remove all "stringification" extra data
+    console.log("array size total %s",g.length/1000000); //this will be your length.
+    
+    data.rows=temp;
+    console.log("total cells needed %s,elngth %s,width %s",data.rows.length*data.headers.length,data.rows.length ,data.headers.length);
 
     rowsAvailable = Math.floor((5000000 / data.headers.length) - sheet.getLastRow() - 1 - 1000);
-    if(rowsAvailable <  data.rows.length){
-      data.rows=data.rows.slice(0,rowsAvailable);
-      sheet.getRange(sheet.getLastRow() + 1, 1, data.rows.length, data.headers.length).setValues(data.rows);
-      //SpreadsheetApp.getActive().getSheetByName("Inputs").getRange("h9").setValue("Completed").setFontColor("green");
-    }
-
-    sheet.getRange(1, 1, 1, sheet.getMaxColumns()).setFontStyle("bold");
-
-    sheet.getRange(sheet.getLastRow() + 1, 1, data.rows.length, data.headers.length).setValues(data.rows);
-//    if (data.status == "Completed") {
-//        SpreadsheetApp.getActive().getSheetByName("Inputs").getRange("h9").setValue("Completed").setFontColor("green");
-//
-//    } else if (data.status == "RunAgain") {
-//        rowsAvailable = Math.floor((5000000 / data.headers.length) - sheet.getLastRow() - 1 - 1000);
-//        if(rowsAvailable<1000)SpreadsheetApp.getActive().getSheetByName("Inputs").getRange("h9").setValue("Completed").setFontColor("green");
-//        SpreadsheetApp.getActive().getSheetByName("Inputs").getRange("h9").setValue("Run Again").setFontColor("red")
+//    if(rowsAvailable <  data.rows.length){
+//      data.rows=data.rows.slice(0,rowsAvailable);
+//      sheet.getRange(sheet.getLastRow() + 1, 1, data.rows.length, data.headers.length).setValues(data.rows);
+//    }  
+    sheet.getRange(1, 1, 1, data.headers.length).setFontStyle("bold");
+//    let i=0;
+//    while(i<data.maxRows){
+//      slice=data.rows.slice(i,i+20000);
+//       sheet.getRange(sheet.getLastRow()+1, 1, slice.length, data.headers.length).setValues(slice);
+//       i=i+20000;
+//       console.log("written %s rows",i);
 //    }
+    resultRowsLength=Math.min(data.rows.length,data.maxRows);
+    if(resultRowsLength < data.rows.length)data.rows=data.rows.slice(0,resultRowsLength);
+    sheet.getRange(2, 1, resultRowsLength, data.headers.length).setValues(data.rows);
+    
 
 }
