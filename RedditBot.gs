@@ -2,12 +2,13 @@ function onOpen() {
     var ui = SpreadsheetApp.getUi().createMenu('RedditBot')
         .addItem('GetInfo', 'myFunction')
         .addToUi();
-}
+ }
+
 
 function myFunction() {
     let inputSheet = SpreadsheetApp.getActive().getSheetByName("Inputs");
     let outputSheet = SpreadsheetApp.getActive().getSheetByName("Export");
-    let results = fetchResults(inputSheet, outputSheet);
+    let results = fetchResults(inputSheet,outputSheet);
     updateSheet(outputSheet, results);
 }
 
@@ -33,12 +34,13 @@ function metaDataFunction(url, startDate, endDate) {
 
 function applyParamsFunction(url, typeOfExport, username, subredditName, fiedsToInclude) {
 
-    url +=  typeOfExport + "\/?";
+   
+    url = url + typeOfExport + "\/?";
     if (username)
         url += '&author=' + username;
     if (subredditName)
         url += '&subreddit=' + subredditName;
-    url += "&metadata=true&size=1000";
+    url += "&metadata=true&size=1000&sort=desc";
     let fiedsToIncludeString = fiedsToInclude.toString().replace("[", "").replace("]", "");
     url += "&fields=" + fiedsToIncludeString;
     return url;
@@ -51,9 +53,10 @@ function formatResult(results, fiedsToInclude) {
         fiedsToInclude.forEach(function (fieldName) {
             if (result[fieldName] == undefined)
                 entries.push(' ');
-            else if (fieldName == "created_utc") {
-                entries.push(new Date(result[fieldName] * 1000));
-            } else
+            else if (fieldName=="created_utc"){
+              entries.push(new Date(result[fieldName] *1000));
+            }
+            else
                 entries.push(result[fieldName]);
         });
 
@@ -68,7 +71,7 @@ function fetchResults(inputSheet, outputSheet) {
     console.log("called first");
 
     let typeOfExport = inputSheet.getRange("e2").getValue();
-    console.log("type of export %s", typeOfExport);
+    //console.log("type of export %s", typeOfExport);
 
     typeOfExport = typeOfExport.match(/comments/g) ? 'comment' : 'submission'
         let subredditName = inputSheet.getRange("e4") ? inputSheet.getRange("e4").getValue().trim() : undefined;
@@ -108,41 +111,46 @@ function fetchResults(inputSheet, outputSheet) {
         endDate = inputSheet.getRange("e10").getValue().getTime() / 1000;
     }
     let metadata = metaDataFunction(url, startDate, endDate);
-    //let rowsAvailable = Math.floor((5000000 / fiedsToInclude.length) - outputSheet.getLastRow() - 1);
+    let rowsAvailable = Math.floor((5000000 / fiedsToInclude.length) - outputSheet.getLastRow() - 1);
 
     let resultsAcc = {
-        "rows": [],
-		"headers":fiedsToInclude
+        "rows": []
     };
-
-    resultsAcc.maxRows = inputSheet.getRange("e13").getValue();
+    
+    resultsAcc.maxRows=inputSheet.getRange("e13").getValue();
     resultsAcc = fetchResultsSub(inputSheet, url, resultsAcc, new Date().getTime(), startDate, endDate, metadata);
     resultsAcc.rows = formatResult(resultsAcc.rows, fiedsToInclude);
 
+    resultsAcc.headers = fiedsToInclude;
+    
     return resultsAcc;
 }
 
-function fetchResultsSub( url, resultsAccum, tic, startDate, endDate, metadata) {
+function fetchResultsSub(inputSheet, url, resultsAccum, tic, startDate, endDate, metadata) {
     let finalUrl = url;
+    console.log("url  %s and enddate %s",url,endDate);
     if (endDate) {
         finalUrl += "&before=" + endDate;
+        console.log("end date %s", new Date(endDate*1000));
     }
     if (startDate) {
         finalUrl += "&after=" + startDate;
+        console.log("start date %s", new Date(startDate*1000));
     }
 
-    console.log("url is %s", finalUrl);
+    //console.log("url is %s", finalUrl);
     let toc = new Date().getTime();
-
+    
     if ((toc - tic) / 1000 > 200) {
         return resultsAccum;
     } else if (endDate && startDate && endDate <= startDate) {
         resultsAccum.status = "Completed";
         return resultsAccum;
-    } else if (resultsAccum.maxRows <= resultsAccum.rows.length) {
+    }else if(resultsAccum.maxRows <= resultsAccum.rows.length){
         resultsAccum.status = "Completed";
         return resultsAccum;
-    } else {
+    }
+    else {
 
         let queryResult = UrlFetchApp.fetch(finalUrl).getContentText();
         console.log("type of %s", typeof(queryResult));
@@ -155,9 +163,10 @@ function fetchResultsSub( url, resultsAccum, tic, startDate, endDate, metadata) 
             resultsAccum.status = "Completed";
             return resultsAccum;
         }
-        resultsAccum.rows = resultsAccum.rows.concat(queryResult.data);
+        resultsAccum.rows = resultsAccum.rows.concat(data);
         let lastCreatedUTC = data[data.length - 1].created_utc;
-        return fetchResultsSub( url, resultsAccum, tic, startDate, lastCreatedUTC - 1);
+        //console.log("created utc %s and last element format %s and first element created utc %s",data[data.length - 1].created_utc, new Date(data[data.length - 1].created_utc*1000), new Date(data[0].created_utc*1000));
+        return fetchResultsSub(inputSheet, url, resultsAccum, tic, startDate, lastCreatedUTC - 1,metadata);
 
     }
 
@@ -167,37 +176,59 @@ function updateSheetExp(sheet, data) {
     sheet.clear();
     sheet.clearFormats();
     sheet.clearNotes();
-
+    
     sheet.appendRow(data.headers);
-
+    
     sheet.getRange(1, 1, 1, sheet.getMaxColumns()).setFontStyle("bold");
 
     sheet.getRange(sheet.getLastRow() + 1, 1, data.rows.length, data.headers.length).setValues(data.rows);
-/*     if (data.isCompleted == true) {
+    if (data.isCompleted == true) {
         SpreadsheetApp.getActive().getSheetByName("Inputs").getRange("h9").setValue("Completed").setFontColor("green");
 
     } else if (data.isCompleted == false) {
         SpreadsheetApp.getActive().getSheetByName("Inputs").getRange("h9").setValue("Run Again").setFontColor("red")
-    } */
+    }
 
 }
 
 function updateSheet(sheet, data) {
     sheet.clear();
     sheet.clearFormats();
-
-    sheet.appendRow(data.headers);
-    temp = [];
-    console.log("total cells needed %s,elngth %s,width %s", data.rows.length * data.headers.length, data.rows.length, data.headers.length);
+    sheet.clearNotes();
+    if (sheet.getLastRow() == 0) {
+        sheet.appendRow(data.headers);
+    }
+    temp=[];
+    
+//    for(let i=0;i<100;i++){
+//      temp=temp.concat(data.rows);
+//    
+//    }
+//    var g = JSON.stringify(temp).replace(/[\[\]\,\"]/g,''); //stringify and remove all "stringification" extra data
+//    console.log("array size total %s",g.length/1000000); //this will be your length.
+//    
+//    data.rows=temp;
+    console.log("total cells needed %s,elngth %s,width %s",data.rows.length*data.headers.length,data.rows.length ,data.headers.length);
 
     rowsAvailable = Math.floor((5000000 / data.headers.length) - sheet.getLastRow() - 1 - 1000);
-
-    resultRowsLength = Math.min(data.rows.length, data.maxRows);
-    if (resultRowsLength < data.rows.length)
-        data.rows = data.rows.slice(0, resultRowsLength);
-    if (data.rows.length > 0)
-        sheet.getRange(2, 1, resultRowsLength, data.headers.length).setValues(data.rows);
+//    if(rowsAvailable <  data.rows.length){
+//      data.rows=data.rows.slice(0,rowsAvailable);
+//      sheet.getRange(sheet.getLastRow() + 1, 1, data.rows.length, data.headers.length).setValues(data.rows);
+//    }  
+    
+//    let i=0;
+//    while(i<data.maxRows){
+//      slice=data.rows.slice(i,i+20000);
+//       sheet.getRange(sheet.getLastRow()+1, 1, slice.length, data.headers.length).setValues(slice);
+//       i=i+20000;
+//       console.log("written %s rows",i);
+//    }
+    resultRowsLength=Math.min(data.rows.length,data.maxRows);
+    if(resultRowsLength < data.rows.length)data.rows=data.rows.slice(0,resultRowsLength);
+    if(data.rows.length!=0)
+      sheet.getRange(2, 1, resultRowsLength, data.headers.length).setValues(data.rows);
     //else SpreadsheetApp.getUi().alert("No Data Retured");
     sheet.getRange(1, 1, 1, data.headers.length).setFontWeight("bold");
+    
 
 }
